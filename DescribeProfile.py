@@ -127,7 +127,7 @@ class Box(QtGui.QDialog):
         self.SB_width.setPrefix("")
         self.SB_width.setSuffix("")
         self.SB_width.setDecimals(1)
-        self.SB_width.setMinimum(0.1)
+        self.SB_width.setMinimum(0.0)
         self.SB_width.setMaximum(1000.0)
         self.SB_width.setSingleStep(0.1)
         self.SB_width.setProperty("value",self.P_width)
@@ -138,10 +138,10 @@ class Box(QtGui.QDialog):
         self.SB_mainthickness.setToolTip ("Adjust main or web thickness")
         self.SB_mainthickness.setPrefix("")
         self.SB_mainthickness.setSuffix("")
-        self.SB_mainthickness.setDecimals(1)
+        self.SB_mainthickness.setDecimals(2)
         self.SB_mainthickness.setMinimum(0)
         self.SB_mainthickness.setMaximum(100.0)
-        self.SB_mainthickness.setSingleStep(0.1)
+        self.SB_mainthickness.setSingleStep(0.01)
         self.SB_mainthickness.setProperty("value",self.P_mainthickness)
         self.SB_mainthickness.setObjectName("mainthickness")
         self.SB_mainthickness.move(160,170)
@@ -243,12 +243,10 @@ class Box(QtGui.QDialog):
         p = float(self.Weight)
         
             
-        if self.fam =="Flat Sections": 
+        if self.fam =="Flat Sections" or self.fam =="Square" : 
             SQRprofile(obj,linksub,w,h,mt,ft,r1,r2,l,p,self.MakeFillet,False,self.HeightCentered,self.WidthCentered)
         if self.fam =="Square Hollow" or self.fam =="Rectangular Hollow":
             SQRprofile(obj,linksub,w,h,mt,ft,r1,r2,l,p,self.MakeFillet,True,self.HeightCentered,self.WidthCentered)
-        if self.fam =="Square" :
-            SQRprofile(obj,linksub,w,h,mt,ft,r1,r2,l,p,self.MakeFillet,False,self.HeightCentered,self.WidthCentered)    
        
         if self.fam =="Equal Leg Angles" or self.fam =="Unequal Leg Angles":
             Lprofile(obj,linksub,w,h,mt,ft,r1,r2,l,p,self.MakeFillet,False,self.HeightCentered,self.WidthCentered)
@@ -263,6 +261,11 @@ class Box(QtGui.QDialog):
         
         if self.fam =="IPN":
             IHprofile(obj,linksub,w,h,mt,ft,r1,r2,l,p,self.MakeFillet,False,self.HeightCentered,self.WidthCentered,True)
+        if self.fam =="IPE":
+            IHprofile(obj,linksub,w,h,mt,ft,r1,r2,l,p,self.MakeFillet,False,self.HeightCentered,self.WidthCentered,False)  
+
+        if self.fam =="Pipe" or self.fam =="Round bar":
+            Pipe(obj,linksub,w,h,mt,ft,r1,r2,l,p,self.MakeFillet,False,self.HeightCentered,self.WidthCentered,False)        
         
         self.close()
 
@@ -1230,6 +1233,112 @@ class IHprofile:
         fuse = coin1.fuse(coin2)
         return fuse        
  
+class Pipe:
+   def __init__(self,obj,linksub,init_w,init_h,init_mt,init_ft,init_r1,init_r2,init_lenobj,init_wg,init_mf,init_hw,init_hc,init_wc,init_upn):
+            
+     
+      obj.addProperty("App::PropertyFloat","Height","Parameters","").Height = init_h
+      obj.addProperty("App::PropertyFloat","Thickness","Parameters").Thickness = init_mt
+      obj.addProperty("App::PropertyFloat","Length","Parameters","Extrude Lenght").Length = init_lenobj
+      obj.addProperty("App::PropertyFloat","Bevel1","Parameters","First bevel cut").Bevel1 = 0
+      obj.addProperty("App::PropertyFloat","Bevel2","Parameters","Second bevel cut").Bevel2 = 0
+      obj.addProperty("App::PropertyFloat","BevelRotate","Parameters","Angle of bevel around his axle").BevelRotate = 0
+      obj.addProperty("App::PropertyFloat","ApproxWeight","Base","").ApproxWeight= init_wg*init_lenobj  
+      obj.addProperty("App::PropertyBool","HeightCentered","Parameters","Choose corner or profile centre as origin").HeightCentered = init_hc
+      obj.addProperty("App::PropertyBool","WidthCentered","Parameters","Choose corner or profile centre as origin").WidthCentered = init_wc
+      
+      if linksub: obj.addProperty("App::PropertyLinkSub","Target","Base","Target face").Target = linksub
+       
+      self.WM = init_wg
+      obj.Proxy = self
+ 
+   def onChanged(self, obj, prop):
+      
+      if prop == "Height" or prop == "Thickness" or prop == "Length" or prop == "Bevel1" or prop == "Bevel2" or prop == "Centered" or prop == "BevelRotate":
+        self.execute(obj)
+
+   def execute(self, obj):
+           
+        try:
+            L = obj.Target[0].getSubObject(obj.Target[1][0]).Length
+        except:   
+            L = obj.Length 
+           
+        obj.ApproxWeight = self.WM*L 
+        
+        pl = obj.Placement
+        T = obj.Thickness
+        H = obj.Height
+        W = H
+        w = 0
+        h = 0
+        d = v(0,0,1)
+        B1 = obj.Bevel1
+        B2 = obj.Bevel2
+        A = obj.BevelRotate
+   
+        k = 2 * round (max (H/W,W/H),2)                 # coeff pour depasser l'objet (rotation bevel)
+        YA1 = W*math.tan(math.pi*B1/180)
+        YA2 = W*math.tan(math.pi*B2/180)
+        
+        if obj.WidthCentered == True:  w = -W/2
+        if obj.HeightCentered == True: h = -H/2   
+             
+        c = v(H/2+w,H/2+h,0)
+        A1 = Part.makeCircle(H/2,c,d,0,360)   
+        A2 = Part.makeCircle((H-T)/2,c,d,0,360)       
+        wire1 = Part.Wire([A1])
+        wire2 = Part.Wire([A2])
+            
+  
+        if T:
+            p1 = Part.Face(wire1)
+            p2 = Part.Face(wire2)  
+            p = p1.cut(p2)
+        else:
+            p = Part.Face(wire1)
+        
+        if L:                                       # si on extrude
+            ProfileFull = p.extrude(v(0,0,L))
+            obj.Shape = ProfileFull
+                
+            if B1 or B2:                            # couper les extrémités
+                if B1 and not B2: 
+                    p1 = v(w,h,0)
+                    p2 = v(k*W+w,k*h,0)
+                    p3 = v(k*W+w,k*h,k*YA1)
+                    obj.Shape  = ProfileFull.cut(self.SubtractiveCoin(p1,p2,p3,H,A,d,k))
+                if B2 and not B1: 
+                    p1 = v(w,h,L)
+                    p2 = v(k*W+w,k*h,L)
+                    p3 = v(k*W+w,k*h,L-k*YA2)
+                    obj.Shape  = ProfileFull.cut(self.SubtractiveCoin(p1,p2,p3,H,A,d,k))
+                if B1 and B2 :  
+                    p1 = v(w,h,0)
+                    p2 = v(k*W+w,k*h,0)
+                    p3 = v(k*W+w,k*h,k*YA1)
+                    Profiledemicut = ProfileFull.cut(self.SubtractiveCoin(p1,p2,p3,H,A,d,k))
+                    p1 = v(w,h,L)
+                    p2 = v(k*W+w,k*h,L)
+                    p3 = v(k*W+w,k*h,L-k*YA2)
+                    obj.Shape  = Profiledemicut.cut(self.SubtractiveCoin(p1,p2,p3,H,A,d,k)) 
+        else:   
+            obj.Shape = p
+            
+        obj.Placement = pl
+        obj.positionBySupport()
+        
+   def SubtractiveCoin(obj,p1,p2,p3,H,A,d,k):
+        WireCoin = Part.makePolygon([p1,p2,p3,p1])
+        FaceCoin = Part.Face(WireCoin)
+        coin1 = FaceCoin.extrude(v(0,k*H,0))
+        coin2 = FaceCoin.extrude(v(0,-k*H,0))
+        if A:
+            coin1.rotate (p1,d,A)
+            coin2.rotate (p1,d,A)
+        fuse = coin1.fuse(coin2)
+        return fuse    
+
 def recherche_fams():
     #Scan le fichier complet pour trouver les familles
     #Renvoie une liste contenant les noms
@@ -1265,19 +1374,19 @@ def trouve_txt(pos,txt):
         pos_found = pos_line + ligne.find(txt)
     return pos_found
 
-def extrait_data(fam,nom):
+def extrait_data(fam,size):
     #Extrait toutes les données pour une dimension d'une famille
     #Retour une liste:
     #Famille/Size/Donnée1/Donnée2...
     tab=[]
     tab.append(fam)
-    tab.append(nom)
+    tab.append(size)
     posfam = trouve_txt(0,fam)
-    posnom = trouve_txt(posfam,nom)
+    possize = trouve_txt(posfam,size)
     car=str=""
        
     with open(path, "r") as file:    
-        file.seek (posnom+len(nom))
+        file.seek (possize+len(size))
         while True:   
             while True:
                 car = file.read(1)
@@ -1286,7 +1395,7 @@ def extrait_data(fam,nom):
             if str: tab.append(str)
             str=""   
             if  car == "\n": break
-    # print(tab)
+    print(tab)
     return tab 
 
 def recherche_ind(fam,type):
@@ -1300,7 +1409,6 @@ def recherche_ind(fam,type):
     with open(path, "r") as file:  
         file.seek(pos4)
         ligne = file.readline().rstrip()
-        # ntype = ligne.count("/")+1    nb de type
         typ = ligne.split("/")
         ind = typ.index(type)+1
     return ind
@@ -1342,13 +1450,16 @@ path = os.path.dirname(path)
 path = os.path.join(path,file)         
 file_len = os.stat(path).st_size
 ind_def = 10
-# print (file_len) 
+print ("file: ",file_len) 
 
 doc = FreeCAD.activeDocument()
 if doc == None: doc = FreeCAD.newDocument()
 
 # a = recherche_fams()
 # print (a)
+
+
+
 
 form = Box()
 form.exec_()
